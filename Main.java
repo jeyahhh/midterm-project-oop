@@ -150,7 +150,7 @@ public class Main {
     // 3. Remove Item
    
 
-    private static void removeItem() {
+        private static void removeItem() {
         String id = readIdFormat("Enter ID: ");
         Item item = inventory.findById(id);
 
@@ -158,10 +158,29 @@ public class Main {
             System.out.println("Item not found!");
             return;
         }
+
+        boolean confirmed = readYesNo("Are you sure you want to remove Item" + item.getName() + "? (Y/N): ");
+        if (!confirmed){
+            System.out.println("Removal cancelled.");
+            return;
+        }
+
         String name = item.getName();
         inventory.removeItem(id);
         System.out.println("Item " + name + " has been removed from the inventory");
     }
+
+        private static boolean readYesNo(String prompt) {
+            boolean readConfirmation = true;
+            while (readConfirmation) {
+                System.out.print(prompt);
+                String input = scanner.nextLine().trim().toLowerCase();
+                if(input.equals("y") || input.equals("yes")) return true;
+                if(input.equals("n") || input.equals("no")) return false;
+                System.out.println("Invalid choice! Please enter Y or N.");
+            }
+            throw new IllegalStateException("Unreachable");
+        }
 
     
     // 4. Display Items by Category

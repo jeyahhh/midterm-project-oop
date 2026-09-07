@@ -1,10 +1,10 @@
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Scanner;
-import java.util.regex.Pattern;
 
 /**
- * Entry point. Drives the console menu and handles ALL user-input validation
- * so that Item / Inventory stay focused on data, not on parsing console text.
+ * Entry point. Drives the console menu and handles the read-prompt-retry
+ * loops for user input.
  */
 public class Main {
     private static final Scanner scanner = new Scanner(System.in);
@@ -50,27 +50,23 @@ public class Main {
         System.out.println("|   4 - Display Items Category   5 - Display All Items      6 - Search Item     |");
         System.out.println("|   7 - Sort Items               8 - Display Low Stock      9 - Exit            |");
         System.out.println("|_______________________________________________________________________________|");
-        System.out.print("Enter choice: ");
     }
 
     private static int readMenuChoice() {
         boolean readingChoice = true;
         while (readingChoice) {
-            String line = scanner.nextLine().trim();
+            String line = readLine("Enter choice: ");
             try {
                 int choice = Integer.parseInt(line);
                 if (choice < 1 || choice > 9) {
-                    System.out.print("Invalid choice! Please enter a number from 1-9: ");
+                    System.out.println("Invalid choice! Please enter a number from 1-9.");
                     continue;
                 }
                 return choice;
             } catch (NumberFormatException e) {
-                System.out.print("Invalid input! Please enter a number from 1-9: ");
+                System.out.println("Invalid input! Please enter a number from 1-9.");
             }
         }
-        // Unreachable in practice — every valid path returns from inside the loop —
-        // but required because the compiler can no longer prove the loop is infinite
-        // now that it depends on a boolean variable instead of the literal `true`.
         throw new IllegalStateException("Unreachable");
     }
 
@@ -86,23 +82,33 @@ public class Main {
         System.out.println("|   - ELECTRONICS\t\t\t\t\t|");
         System.out.println("|   - ENTERTAINMENT\t\t\t\t\t|");
         System.out.println("|_______________________________________________________|");
-        System.out.println("Enter Category : ");
-        String categoryInput = scanner.nextLine().trim();
 
-        if (!Inventory.isValidCategory(categoryInput)) {
-            System.out.println("Category " + categoryInput + " does not exist!");
-            return;
-        }
-        String category = Inventory.normalizeCategory(categoryInput);
-
+        String category = readValidCategory("Enter Category: ");
         String id = readFormattedUniqueId(category);
-        String name = readNonEmptyString("Enter Name: ");
-        int quantity = readNonNegativeInt("Enter Quantity: ");
-        double price = readNonNegativeDouble("Enter Price: ");
+        String name = readValidName("Enter Name: ");
+
+        if (nameAlreadyUsedInCategory(name, category)) {
+            boolean proceed = readYesNo("An item named \"" + name + "\" already exists in " + category
+                    + ". Add it anyway? (Y/N): ");
+            if (!proceed) {
+                System.out.println("Add item cancelled.");
+                return;
+            }
+        }
+
+        int quantity = readValidQuantity("Enter Quantity: ");
+        double price = readValidPrice("Enter Price: ");
 
         Item item = ItemFactory.createItem(category, id, name, quantity, price);
         inventory.addItem(item);
         System.out.println("Item added successfully!");
+    }
+
+    private static boolean nameAlreadyUsedInCategory(String name, String category) {
+        for (Item item : inventory.getByCategory(category)) {
+            if (item.getName().equalsIgnoreCase(name)) return true;
+        }
+        return false;
     }
 
     // ---------------------------------------------------------------------
@@ -121,13 +127,21 @@ public class Main {
         String field = readFieldChoice();
         if (field.equals("quantity")) {
             int oldValue = item.getQuantity();
-            int newValue = readNonNegativeInt("Enter new Quantity: ");
+            int newValue = readValidQuantity("Enter new Quantity: ");
+            if (newValue == oldValue) {
+                System.out.println("New value is the same as the current value — no change made.");
+                return;
+            }
             item.setQuantity(newValue);
             System.out.println("Quantity of Item " + item.getName() + " is updated from "
                     + oldValue + " to " + newValue);
         } else {
             double oldValue = item.getPrice();
-            double newValue = readNonNegativeDouble("Enter new Price: ");
+            double newValue = readValidPrice("Enter new Price: ");
+            if (newValue == oldValue) {
+                System.out.println("New value is the same as the current value — no change made.");
+                return;
+            }
             item.setPrice(newValue);
             System.out.println("Price of Item " + item.getName() + " is updated from "
                     + oldValue + " to " + newValue);
@@ -137,8 +151,7 @@ public class Main {
     private static String readFieldChoice() {
         boolean readingField = true;
         while (readingField) {
-            System.out.print("Update Quantity or Price? (Q/P): ");
-            String input = scanner.nextLine().trim().toLowerCase();
+            String input = readLine("Update Quantity or Price? (Q/P): ").toLowerCase();
             if (input.equals("q") || input.equals("quantity")) return "quantity";
             if (input.equals("p") || input.equals("price")) return "price";
             System.out.println("Invalid choice! Please enter Q for Quantity or P for Price.");
@@ -146,11 +159,11 @@ public class Main {
         throw new IllegalStateException("Unreachable");
     }
 
-    
+    // ---------------------------------------------------------------------
     // 3. Remove Item
-   
+    // ---------------------------------------------------------------------
 
-        private static void removeItem() {
+    private static void removeItem() {
         String id = readIdFormat("Enter ID: ");
         Item item = inventory.findById(id);
 
@@ -159,8 +172,8 @@ public class Main {
             return;
         }
 
-        boolean confirmed = readYesNo("Are you sure you want to remove Item" + item.getName() + "? (Y/N): ");
-        if (!confirmed){
+        boolean confirmed = readYesNo("Are you sure you want to remove Item " + item.getName() + "? (Y/N): ");
+        if (!confirmed) {
             System.out.println("Removal cancelled.");
             return;
         }
@@ -170,48 +183,40 @@ public class Main {
         System.out.println("Item " + name + " has been removed from the inventory");
     }
 
-        private static boolean readYesNo(String prompt) {
-            boolean readConfirmation = true;
-            while (readConfirmation) {
-                System.out.print(prompt);
-                String input = scanner.nextLine().trim().toLowerCase();
-                if(input.equals("y") || input.equals("yes")) return true;
-                if(input.equals("n") || input.equals("no")) return false;
-                System.out.println("Invalid choice! Please enter Y or N.");
-            }
-            throw new IllegalStateException("Unreachable");
+    private static boolean readYesNo(String prompt) {
+        boolean readConfirmation = true;
+        while (readConfirmation) {
+            String input = readLine(prompt).toLowerCase();
+            if (input.equals("y") || input.equals("yes")) return true;
+            if (input.equals("n") || input.equals("no")) return false;
+            System.out.println("Invalid choice! Please enter Y or N.");
         }
+        throw new IllegalStateException("Unreachable");
+    }
 
-    
+    // ---------------------------------------------------------------------
     // 4. Display Items by Category
-    
+    // ---------------------------------------------------------------------
 
     private static void displayItemsByCategory() {
-        System.out.print("Enter Category (Clothing/Electronics/Entertainment): ");
-        String categoryInput = scanner.nextLine().trim();
-
-        if (!Inventory.isValidCategory(categoryInput)) {
-            System.out.println("Category " + categoryInput + " does not exist!");
-            return;
-        }
-        String category = Inventory.normalizeCategory(categoryInput);
+        String category = readValidCategory("Enter Category (Clothing/Electronics/Entertainment): ");
         List<Item> results = inventory.getByCategory(category);
 
-        printBoxedTable(category.toUpperCase() + " ITEMS", false, results,
+        ConsoleTablePrinter.printBoxedTable(category.toUpperCase() + " ITEMS", false, results,
                 "No items found in category " + category + ".");
     }
 
-    
+    // ---------------------------------------------------------------------
     // 5. Display All Items
-   
+    // ---------------------------------------------------------------------
 
     private static void displayAllItems() {
-        printBoxedTable("ALL ITEMS", true, inventory.getAllItems(), "Inventory is empty.");
+        ConsoleTablePrinter.printBoxedTable("ALL ITEMS", true, inventory.getAllItems(), "Inventory is empty.");
     }
 
-    
+    // ---------------------------------------------------------------------
     // 6. Search Item
-    
+    // ---------------------------------------------------------------------
 
     private static void searchItem() {
         String id = readIdFormat("Enter ID: ");
@@ -221,12 +226,12 @@ public class Main {
             System.out.println("Item not found!");
             return;
         }
-        printBoxedTable("ITEM FOUND!", true, List.of(item), "");
+        ConsoleTablePrinter.printBoxedTable("ITEM FOUND!", true, List.of(item), "");
     }
 
-    
+    // ---------------------------------------------------------------------
     // 7. Sort Items
-    
+    // ---------------------------------------------------------------------
 
     private static void sortItems() {
         String sortBy = readSortByChoice();
@@ -235,14 +240,13 @@ public class Main {
         List<Item> sorted = inventory.sortItems(sortBy, ascending);
         String title = "ITEMS SORTED BY " + sortBy.toUpperCase() + " ("
                 + (ascending ? "ASCENDING" : "DESCENDING") + ")";
-        printBoxedTable(title, true, sorted, "Inventory is empty.");
+        ConsoleTablePrinter.printBoxedTable(title, true, sorted, "Inventory is empty.");
     }
 
     private static String readSortByChoice() {
         boolean readingSortBy = true;
         while (readingSortBy) {
-            System.out.print("Sort by Quantity or Price? (Q/P): ");
-            String input = scanner.nextLine().trim().toLowerCase();
+            String input = readLine("Sort by Quantity or Price? (Q/P): ").toLowerCase();
             if (input.equals("q") || input.equals("quantity")) return "quantity";
             if (input.equals("p") || input.equals("price")) return "price";
             System.out.println("Invalid choice! Please enter Q for Quantity or P for Price.");
@@ -253,8 +257,7 @@ public class Main {
     private static boolean readSortOrderChoice() {
         boolean readingOrder = true;
         while (readingOrder) {
-            System.out.print("Ascending or Descending? (A/D): ");
-            String input = scanner.nextLine().trim().toLowerCase();
+            String input = readLine("Ascending or Descending? (A/D): ").toLowerCase();
             if (input.equals("a") || input.equals("ascending")) return true;
             if (input.equals("d") || input.equals("descending")) return false;
             System.out.println("Invalid choice! Please enter A for Ascending or D for Descending.");
@@ -262,32 +265,105 @@ public class Main {
         throw new IllegalStateException("Unreachable");
     }
 
-    
+    // ---------------------------------------------------------------------
     // 8. Display Low Stock Items
-   
+    // ---------------------------------------------------------------------
 
     private static void displayLowStockItems() {
-        printBoxedTable("LOW STOCK ITEMS (QTY <= 5)", true, inventory.getLowStockItems(), "No low stock items.");
+        ConsoleTablePrinter.printBoxedTable("LOW STOCK ITEMS (QTY <= 5)", true, inventory.getLowStockItems(), "No low stock items.");
     }
 
-    
-    // Shared input-validation helpers
-    
+    // ---------------------------------------------------------------------
+    // Shared input-reading helpers.
+    // These own the "keep asking until it's valid" loop; the actual
+    // validity rules live in InputValidator so they can be reused/tested
+    // without a Scanner attached.
+    // ---------------------------------------------------------------------
 
-    private static String readNonEmptyString(String prompt) {
-        boolean readingInput = true;
-        while (readingInput) {
-            System.out.print(prompt);
-            String input = scanner.nextLine().trim();
-            if (!input.isEmpty()) return input;
-            System.out.println("Input cannot be empty!");
+    private static String readValidCategory(String prompt) {
+        boolean readingCategory = true;
+        while (readingCategory) {
+            String input = readLine(prompt);
+            if (!Inventory.isValidCategory(input)) {
+                System.out.println("Category " + input + " does not exist! Choose Clothing, Electronics, or Entertainment.");
+                continue;
+            }
+            return Inventory.normalizeCategory(input);
         }
         throw new IllegalStateException("Unreachable");
     }
 
-    // Matches exactly 3 letters, a dash, then exactly 4 digits — e.g. "CLT-1234", "elc-0001".
-    // The letters are captured so we can check they match the expected category prefix.
-    private static final Pattern ID_FORMAT = Pattern.compile("^([A-Za-z]{3})-(\\d{4})$");
+    private static String readValidName(String prompt) {
+        boolean readingName = true;
+        while (readingName) {
+            String input = readLine(prompt);
+            if (input.isBlank()) {
+                System.out.println("Name cannot be empty!");
+                continue;
+            }
+            if (input.length() > InputValidator.MAX_NAME_LENGTH) {
+                System.out.println("Name is too long! Maximum length is "
+                        + InputValidator.MAX_NAME_LENGTH + " characters.");
+                continue;
+            }
+            if (!InputValidator.isValidName(input)) {
+                System.out.println("Name cannot contain the \"|\" character.");
+                continue;
+            }
+            return input;
+        }
+        throw new IllegalStateException("Unreachable");
+    }
+
+    private static int readValidQuantity(String prompt) {
+        boolean readingNumber = true;
+        while (readingNumber) {
+            String input = readLine(prompt);
+            try {
+                int value = Integer.parseInt(input);
+                if (value < 0) {
+                    System.out.println("Quantity cannot be negative!");
+                    continue;
+                }
+                if (value > InputValidator.MAX_QUANTITY) {
+                    System.out.println("Quantity is too large! Maximum allowed is "
+                            + InputValidator.MAX_QUANTITY + ".");
+                    continue;
+                }
+                return value;
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid input! Please enter a whole number.");
+            }
+        }
+        throw new IllegalStateException("Unreachable");
+    }
+
+    private static double readValidPrice(String prompt) {
+        boolean readingNumber = true;
+        while (readingNumber) {
+            String input = readLine(prompt);
+            try {
+                double value = Double.parseDouble(input);
+                if (value < 0) {
+                    System.out.println("Price cannot be negative!");
+                    continue;
+                }
+                if (value > InputValidator.MAX_PRICE) {
+                    System.out.println("Price is too large! Maximum allowed is "
+                            + InputValidator.MAX_PRICE + ".");
+                    continue;
+                }
+                if (!InputValidator.isValidPrice(value)) {
+                    System.out.println("Price can have at most 2 decimal places (e.g. 19.99).");
+                    continue;
+                }
+                return value;
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid input! Please enter a valid number.");
+            }
+        }
+        throw new IllegalStateException("Unreachable");
+    }
 
     /**
      * Reads any ID and validates it against the required format only:
@@ -300,9 +376,8 @@ public class Main {
     private static String readIdFormat(String prompt) {
         boolean readingId = true;
         while (readingId) {
-            System.out.print(prompt);
-            String input = scanner.nextLine().trim();
-            if (!ID_FORMAT.matcher(input).matches()) {
+            String input = readLine(prompt);
+            if (!InputValidator.isValidIdFormat(input)) {
                 System.out.println("Invalid ID format! Must be 3 letters, a dash, then 4 digits (e.g. CLT-0001).");
                 continue;
             }
@@ -339,106 +414,21 @@ public class Main {
         throw new IllegalStateException("Unreachable");
     }
 
-    private static int readNonNegativeInt(String prompt) {
-        boolean readingNumber = true;
-        while (readingNumber) {
-            System.out.print(prompt);
-            String input = scanner.nextLine().trim();
-            try {
-                int value = Integer.parseInt(input);
-                if (value < 0) {
-                    System.out.println("Value cannot be negative!");
-                    continue;
-                }
-                return value;
-            } catch (NumberFormatException e) {
-                System.out.println("Invalid input! Please enter a whole number.");
-            }
-        }
-        throw new IllegalStateException("Unreachable");
-    }
-
-    private static double readNonNegativeDouble(String prompt) {
-        boolean readingNumber = true;
-        while (readingNumber) {
-            System.out.print(prompt);
-            String input = scanner.nextLine().trim();
-            try {
-                double value = Double.parseDouble(input);
-                if (value < 0) {
-                    System.out.println("Value cannot be negative!");
-                    continue;
-                }
-                return value;
-            } catch (NumberFormatException e) {
-                System.out.println("Invalid input! Please enter a valid number.");
-            }
-        }
-        throw new IllegalStateException("Unreachable");
-    }
-
-    // ---------------------------------------------------------------------
-    // Boxed table rendering — same bordered look as the menu and Add Item's
-    // category box, used by every display/search/sort screen.
-    // ---------------------------------------------------------------------
-
     /**
-     * Prints a titled, bordered table of items. If the list is empty,
-     * prints emptyMessage inside the box instead of a header + rows.
+     * Prints prompt and reads one line, trimmed. Centralizes console input so
+     * every read consistently guards against the input stream running out
+     * (e.g. piped/redirected input during testing) instead of letting a raw
+     * NoSuchElementException crash the program.
      */
-    private static void printBoxedTable(String title, boolean withCategory, List<Item> items, String emptyMessage) {
-        String header = withCategory
-                ? String.format("%-8s %-20s %-10s %-10s %-15s", "ID", "Name", "Quantity", "Price", "Category")
-                : String.format("%-8s %-20s %-10s %-10s", "ID", "Name", "Quantity", "Price");
-
-        int innerWidth = header.length() + 4; // 2-space margin on each side
-        String border = repeat('_', innerWidth);
-
-        System.out.println(" " + border + " ");
-        System.out.println(boxRow(title, innerWidth, true));
-        System.out.println(boxRow("", innerWidth, false));
-
-        if (items.isEmpty()) {
-            System.out.println(boxRow(emptyMessage, innerWidth, false));
-        } else {
-            System.out.println(boxRow(header, innerWidth, false));
-            for (Item item : items) {
-                String row = withCategory ? item.toTableRowWithCategory() : item.toTableRow();
-                System.out.println(boxRow(row, innerWidth, false));
-            }
+    private static String readLine(String prompt) {
+        System.out.print(prompt);
+        try {
+            return scanner.nextLine().trim();
+        } catch (NoSuchElementException e) {
+            System.out.println("\nNo more input available. Exiting program.");
+            scanner.close();
+            System.exit(0);
+            throw new IllegalStateException("Unreachable"); // keeps compiler happy
         }
-
-        System.out.println("|" + border + "|");
-    }
-
-    /** One "|  content...  |" row, either left-aligned or centered, clamped to innerWidth. */
-    private static String boxRow(String content, int innerWidth, boolean centered) {
-        String padded;
-        if (centered) {
-            int totalPad = innerWidth - content.length();
-            if (totalPad < 0) {
-                padded = content.substring(0, innerWidth);
-            } else {
-                int left = totalPad / 2;
-                int right = totalPad - left;
-                padded = repeat(' ', left) + content + repeat(' ', right);
-            }
-        } else {
-            padded = "  " + content;
-            if (padded.length() > innerWidth) {
-                padded = padded.substring(0, innerWidth);
-            } else {
-                padded = padded + repeat(' ', innerWidth - padded.length());
-            }
-        }
-        return "|" + padded + "|";
-    }
-
-    private static String repeat(char c, int count) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < count; i++) {
-            sb.append(c);
-        }
-        return sb.toString();
     }
 }
